@@ -68,12 +68,14 @@ router.get('/many', requireAuth, (req, res) => {
   res.json(capes.map(formatCape));
 });
 
-// GET /api/v1/cosmetics/cape/user/:uuid
+// GET /api/v1/cosmetics/cape/user/:uuid  (public — called by in-game mod)
 // Returns Vec<CosmeticCape> — array of equipped capes (0 or 1 items)
-router.get('/user/:uuid', requireAuth, (req, res) => {
+router.get('/user/:uuid', (req, res) => {
+  // Normalize UUID: accept both with and without dashes
+  const normalizedUuid = req.params.uuid.replace(/-/g, '');
   const equipped = db.prepare(
-    'SELECT c.* FROM capes c INNER JOIN equipped_capes ec ON c.hash = ec.cape_hash WHERE ec.user_uuid=?'
-  ).get(req.params.uuid);
+    'SELECT c.* FROM capes c INNER JOIN equipped_capes ec ON c.hash = ec.cape_hash WHERE REPLACE(ec.user_uuid, \'-\', \'\')=?'
+  ).get(normalizedUuid);
   res.json(equipped ? [formatCape(equipped)] : []);
 });
 

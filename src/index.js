@@ -39,6 +39,12 @@ app.get('/api/v1/core/stats/uniquePlayers24h', (req, res) => {
   res.json(count);
 });
 
+// Global error handler — always returns JSON, never HTML
+app.use((err, req, res, next) => {
+  console.error('[Global Error]', err.message, err.stack);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
 app.listen(PORT, () => {
   console.log(`Doofie Backend running on port ${PORT}`);
 });

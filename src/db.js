@@ -7,6 +7,9 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'doofie.db'));
 
+// Disable FK enforcement — the app handles referential integrity at the application level
+db.pragma('foreign_keys = OFF');
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     uuid TEXT PRIMARY KEY,

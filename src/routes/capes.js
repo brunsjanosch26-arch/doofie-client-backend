@@ -104,25 +104,34 @@ router.post('/', requireAuth, (req, res, next) => {
     next();
   }
 }, (req, res) => {
-  let imageData;
-  if (req.file) {
-    imageData = req.file.buffer;
-  } else if (req.body && Buffer.isBuffer(req.body)) {
-    imageData = req.body;
-  } else {
-    return res.status(400).json({ error: 'No image data provided' });
+  try {
+    let imageData;
+    if (req.file) {
+      imageData = req.file.buffer;
+    } else if (req.body && Buffer.isBuffer(req.body)) {
+      imageData = req.body;
+    } else {
+      console.error('[Cape Upload] No image data — content-type:', req.headers['content-type'], 'body type:', typeof req.body);
+      return res.status(400).json({ error: 'No image data provided' });
+    }
+
+    const hash = crypto.createHash('sha256').update(imageData).digest('hex').slice(0, 32);
+    const filepath = path.join(uploadsDir, `${hash}.png`);
+    fs.writeFileSync(filepath, imageData);
+
+    // Ensure user exists before inserting cape
+    db.prepare('INSERT OR IGNORE INTO users (uuid, username) VALUES (?, ?)').run(req.user.uuid, req.user.username || 'unknown');
+
+    const existing = db.prepare('SELECT hash FROM capes WHERE hash=?').get(hash);
+    if (!existing) {
+      db.prepare('INSERT INTO capes (hash, owner_uuid, filename) VALUES (?, ?, ?)').run(hash, req.user.uuid, `${hash}.png`);
+    }
+
+    res.type('text').send(hash);
+  } catch (err) {
+    console.error('[Cape Upload] Error:', err.message, err.stack);
+    res.status(500).json({ error: 'Cape upload failed: ' + err.message });
   }
-
-  const hash = crypto.createHash('sha256').update(imageData).digest('hex').slice(0, 32);
-  const filepath = path.join(uploadsDir, `${hash}.png`);
-  fs.writeFileSync(filepath, imageData);
-
-  const existing = db.prepare('SELECT hash FROM capes WHERE hash=?').get(hash);
-  if (!existing) {
-    db.prepare('INSERT INTO capes (hash, owner_uuid, filename) VALUES (?, ?, ?)').run(hash, req.user.uuid, `${hash}.png`);
-  }
-
-  res.type('text').send(hash);
 });
 
 // DELETE /api/v1/cosmetics/cape/:hash

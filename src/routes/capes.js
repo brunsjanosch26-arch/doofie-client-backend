@@ -13,16 +13,22 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } });
 
-function formatCape(row, favoritedBy) {
+function formatUuid(uuid) {
+  if (!uuid) return '00000000-0000-0000-0000-000000000000';
+  if (uuid.includes('-')) return uuid;
+  return `${uuid.slice(0,8)}-${uuid.slice(8,12)}-${uuid.slice(12,16)}-${uuid.slice(16,20)}-${uuid.slice(20)}`;
+}
+
+function formatCape(row) {
   return {
-    hash: row.hash,
-    ownerUuid: row.owner_uuid,
-    hasElytra: row.has_elytra === 1,
-    useCount: row.use_count,
-    createdAt: row.created_at,
-    favoriteCount: 0,
-    isFavorited: favoritedBy ? !!db.prepare('SELECT 1 FROM favorite_capes WHERE user_uuid=? AND cape_hash=?').get(favoritedBy, row.hash) : false,
-    textureUrl: `/uploads/capes/${row.hash}.png`,
+    _id: row.hash,
+    accepted: true,
+    uses: row.use_count || 0,
+    firstSeen: formatUuid(row.owner_uuid),
+    moderatorMessage: 'Accepted',
+    creationDate: (row.created_at || 0) * 1000,
+    elytra: row.has_elytra === 1,
+    blurHash: null,
   };
 }
 
@@ -36,21 +42,21 @@ router.get('/browse', requireAuth, (req, res) => {
   const total = db.prepare('SELECT COUNT(*) as c FROM capes').get().c;
 
   res.json({
-    capes: capes.map(c => formatCape(c, req.user.uuid)),
-    pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    capes: capes.map(formatCape),
+    pagination: {
+      currentPage: page,
+      pageSize: pageSize,
+      totalItems: total,
+      totalPages: Math.ceil(total / pageSize),
+    },
   });
 });
 
-// GET /api/v1/cosmetics/cape/user/:uuid
-router.get('/user/:uuid', requireAuth, (req, res) => {
-  const equipped = db.prepare('SELECT * FROM capes WHERE hash = (SELECT cape_hash FROM equipped_capes WHERE user_uuid=?)').get(req.params.uuid);
-  res.json({ equippedCape: equipped ? formatCape(equipped, req.user.uuid) : null });
-});
-
 // GET /api/v1/cosmetics/cape/owned/list
+// Returns HashMap<String, Vec<CosmeticCape>> — client expects {"active": [...]}
 router.get('/owned/list', requireAuth, (req, res) => {
-  const capes = db.prepare('SELECT c.* FROM capes c WHERE c.owner_uuid=?').all(req.user.uuid);
-  res.json(capes.map(c => formatCape(c, req.user.uuid)));
+  const capes = db.prepare('SELECT * FROM capes WHERE owner_uuid=? ORDER BY created_at DESC').all(req.user.uuid);
+  res.json({ active: capes.map(formatCape) });
 });
 
 // GET /api/v1/cosmetics/cape/many
@@ -59,7 +65,16 @@ router.get('/many', requireAuth, (req, res) => {
   if (hashes.length === 0) return res.json([]);
   const placeholders = hashes.map(() => '?').join(',');
   const capes = db.prepare(`SELECT * FROM capes WHERE hash IN (${placeholders})`).all(...hashes);
-  res.json(capes.map(c => formatCape(c, req.user.uuid)));
+  res.json(capes.map(formatCape));
+});
+
+// GET /api/v1/cosmetics/cape/user/:uuid
+// Returns Vec<CosmeticCape> — array of equipped capes (0 or 1 items)
+router.get('/user/:uuid', requireAuth, (req, res) => {
+  const equipped = db.prepare(
+    'SELECT c.* FROM capes c INNER JOIN equipped_capes ec ON c.hash = ec.cape_hash WHERE ec.user_uuid=?'
+  ).get(req.params.uuid);
+  res.json(equipped ? [formatCape(equipped)] : []);
 });
 
 // POST /api/v1/cosmetics/cape/:hash/equip
@@ -82,7 +97,6 @@ router.post('/unequip', requireAuth, (req, res) => {
 
 // POST /api/v1/cosmetics/cape  (upload)
 router.post('/', requireAuth, (req, res, next) => {
-  // Support both multipart upload and raw body
   const contentType = req.headers['content-type'] || '';
   if (contentType.includes('multipart')) {
     upload.single('file')(req, res, next);

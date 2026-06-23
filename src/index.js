@@ -32,6 +32,13 @@ app.use('/api/v1/core/user', userRoutes);
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// Stats endpoint
+app.get('/api/v1/core/stats/uniquePlayers24h', (req, res) => {
+  const db = require('./db');
+  const count = db.prepare("SELECT COUNT(*) as c FROM users WHERE created_at >= strftime('%s','now') - 86400").get().c;
+  res.json(count);
+});
+
 app.listen(PORT, () => {
   console.log(`Doofie Backend running on port ${PORT}`);
 });

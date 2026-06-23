@@ -19,7 +19,7 @@ setInterval(() => {
 router.post('/request-server-id', (req, res) => {
   const serverId = uuidv4().replace(/-/g, '');
   pendingServerIds.set(serverId, { createdAt: Date.now() });
-  res.json({ server_id: serverId });
+  res.json({ serverId, expiresIn: 120 });
 });
 
 // POST /api/v1/launcher/auth/validate/v2
